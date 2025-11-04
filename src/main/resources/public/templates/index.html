@@ -14,7 +14,7 @@
           rel="stylesheet"
   />
   <!-- Meta tag para el dominio base, inyectado desde el backend -->
-  <meta name="base-url" content="https://bruhurl.azurewebsites.net">
+  <meta name="base-url" th:content="${baseUrl}" content="" />
   <style>
     body {
       font-family: 'Poppins', sans-serif;

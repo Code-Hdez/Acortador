@@ -1,46 +1,23 @@
 package edu.pucmm.eict.services;
 
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.IndexOptions;
 import edu.pucmm.eict.modelos.AccessDetail;
 import edu.pucmm.eict.modelos.Url;
 import edu.pucmm.eict.modelos.Usuario;
-import org.bson.Document;
-import org.bson.types.ObjectId;
+import edu.pucmm.eict.util.Database;
 
+import javax.sql.DataSource;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Date;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
-
-import static com.mongodb.client.model.Updates.combine;
-import static com.mongodb.client.model.Updates.inc;
-import static com.mongodb.client.model.Updates.push;
 
 public class UrlService {
-    private MongoCollection<Document> urlCollection;
-    // TTL en segundos para enlaces anónimos (por ejemplo, 1 hora)
-    private static final int ANONYMOUS_TTL_SECONDS = 3600;
+    private final DataSource ds;
+    private static final int ANONYMOUS_TTL_SECONDS = 3600; // 1 hora
 
     public UrlService() {
-        String mongoUrl = System.getenv("MONGODB_URL");
-        if(mongoUrl == null || mongoUrl.isEmpty()){
-            throw new RuntimeException("La variable de ambiente MONGODB_URL no está configurada.");
-        }
-        MongoClient mongoClient = MongoClients.create(mongoUrl);
-        MongoDatabase database = mongoClient.getDatabase("acortador");
-        urlCollection = database.getCollection("urls");
-
-        // Crear un índice TTL en el campo "expiresAt" para enlaces anónimos.
-        IndexOptions indexOptions = new IndexOptions().expireAfter(0L, TimeUnit.SECONDS);
-        urlCollection.createIndex(new Document("expiresAt", 1), indexOptions);
-
-        System.out.println("Conectado a MongoDB en UrlService. Base de datos: " + database.getName());
+        this.ds = Database.getDataSource();
     }
 
     private String generateShortUrl() {
@@ -53,124 +30,260 @@ public class UrlService {
         return sb.toString();
     }
 
-    // Metodo que recibe el usuario que crea la URL.
-    // Si el usuario es anónimo, se añade el campo "expiresAt" para que MongoDB lo elimine automáticamente.
-    public Url saveUrl(String originalUrl, Usuario user) {
-        String shortCode = generateShortUrl();
-        Url url = new Url(originalUrl, shortCode);
-        url.setUser(user);
-
-        // Preparar subdocumento para el usuario (datos básicos)
-        Document userDoc = null;
-        if (user != null) {
-            userDoc = new Document("username", user.getUsername())
-                    .append("role", user.getRole());
+    private String generateUniqueShortCode(Connection c) throws SQLException {
+        for (int attempts = 0; attempts < 10; attempts++) {
+            String candidate = generateShortUrl();
+            try (PreparedStatement ps = c.prepareStatement("SELECT 1 FROM urls WHERE short_url = ?")) {
+                ps.setString(1, candidate);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) return candidate;
+                }
+            }
         }
+        throw new SQLException("No se pudo generar short_url único tras varios intentos");
+    }
 
-        Document doc = new Document("_id", new ObjectId())
-                .append("originalUrl", originalUrl)
-                .append("shortUrl", shortCode)
-                .append("accessCount", 0)
-                .append("accessTimes", new ArrayList<Date>())
-                .append("accessDetails", new ArrayList<Document>())
-                .append("user", userDoc);
+    // Guarda y devuelve Url con datos básicos; si user es anónimo, setea expires_at
+    public Url saveUrl(String originalUrl, Usuario user) {
+        try (Connection c = ds.getConnection()) {
+            Timestamp now = new Timestamp(System.currentTimeMillis());
+            Timestamp expires = null;
+            if (user != null && "anonymous".equals(user.getRole())) {
+                expires = new Timestamp(System.currentTimeMillis() + ANONYMOUS_TTL_SECONDS * 1000L);
+            }
 
-        // Si el usuario es anónimo, agregar el campo "expiresAt"
-       // if (user != null && "anonymous".equals(user.getRole())) {
-            // Date expiresAt = new Date(System.currentTimeMillis() + ANONYMOUS_TTL_SECONDS * 1000L);
-          //  doc.append("expiresAt", expiresAt);
-        //}
+            Long userId = null;
+            if (user != null && user.getId() != null) {
+                userId = user.getId();
+            } else if (user != null && user.getUsername() != null && !user.getUsername().startsWith("anon-")) {
+                // intentar resolver id por username
+                try (PreparedStatement us = c.prepareStatement("SELECT id FROM usuarios WHERE username = ?")) {
+                    us.setString(1, user.getUsername());
+                    try (ResultSet rs = us.executeQuery()) {
+                        if (rs.next()) userId = rs.getLong(1);
+                    }
+                }
+            }
 
-        urlCollection.insertOne(doc);
-        return url;
+            String sql = "INSERT INTO urls(original_url, short_url, access_count, user_id, created_at, expires_at) VALUES(?,?,?,?,?,?)";
+
+            for (int attempt = 0; attempt < 5; attempt++) {
+                String shortCode = generateUniqueShortCode(c);
+                try (PreparedStatement ps = c.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, originalUrl);
+                    ps.setString(2, shortCode);
+                    ps.setInt(3, 0);
+                    if (userId == null) ps.setNull(4, Types.BIGINT); else ps.setLong(4, userId);
+                    ps.setTimestamp(5, now);
+                    if (expires == null) ps.setNull(6, Types.TIMESTAMP); else ps.setTimestamp(6, expires);
+                    ps.executeUpdate();
+                    try (ResultSet keys = ps.getGeneratedKeys()) {
+                        if (keys.next()) {
+                            long id = keys.getLong(1);
+                            Url url = new Url(originalUrl, shortCode);
+                            url.setId(id);
+                            url.setUser(user);
+                            url.setCreatedAt(new java.util.Date(now.getTime()));
+                            url.setExpiresAt(expires != null ? new java.util.Date(expires.getTime()) : null);
+                            return url;
+                        }
+                    }
+                } catch (SQLIntegrityConstraintViolationException dup) {
+                    // colisión por unique: reintentar
+                    continue;
+                }
+            }
+            throw new SQLException("No se pudo insertar URL por colisiones");
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public String getOriginalUrl(String shortUrl) {
-        Document doc = urlCollection.find(new Document("shortUrl", shortUrl)).first();
-        if (doc != null) {
-            urlCollection.updateOne(new Document("shortUrl", shortUrl),
-                    combine(inc("accessCount", 1), push("accessTimes", new Date())));
-            return doc.getString("originalUrl");
+        // Devuelve original y actualiza métricas básicas (access_count y accessTimes)
+        try (Connection c = ds.getConnection()) {
+            // Chequear expiración
+            String q = "SELECT id, original_url, expires_at FROM urls WHERE short_url = ?";
+            try (PreparedStatement ps = c.prepareStatement(q)) {
+                ps.setString(1, shortUrl);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        long id = rs.getLong("id");
+                        Timestamp exp = rs.getTimestamp("expires_at");
+                        if (exp != null && exp.before(new Timestamp(System.currentTimeMillis()))) {
+                            // expirado: eliminar registro
+                            deleteById(c, id);
+                            return null;
+                        }
+                        String original = rs.getString("original_url");
+                        // incrementar access_count
+                        try (PreparedStatement up = c.prepareStatement("UPDATE urls SET access_count = access_count + 1 WHERE id = ?")) {
+                            up.setLong(1, id);
+                            up.executeUpdate();
+                        }
+                        // registrar marca de tiempo simple en access_details como evento sin otros datos
+                        try (PreparedStatement ins = c.prepareStatement("INSERT INTO access_details(url_id, timestamp) VALUES(?,?)")) {
+                            ins.setLong(1, id);
+                            ins.setTimestamp(2, new Timestamp(System.currentTimeMillis()));
+                            ins.executeUpdate();
+                        }
+                        return original;
+                    }
+                }
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
         }
-        return null;
     }
 
     public Url getUrl(String shortUrl) {
-        Document doc = urlCollection.find(new Document("shortUrl", shortUrl)).first();
-        if (doc != null) {
-            return docToUrl(doc);
+        try (Connection c = ds.getConnection()) {
+            String q = "SELECT u.id, u.original_url, u.short_url, u.access_count, u.created_at, u.expires_at, u.user_id, uu.username, uu.password, uu.role " +
+                    "FROM urls u LEFT JOIN usuarios uu ON u.user_id = uu.id WHERE u.short_url = ?";
+            try (PreparedStatement ps = c.prepareStatement(q)) {
+                ps.setString(1, shortUrl);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        Url url = new Url(rs.getString("original_url"), rs.getString("short_url"));
+                        url.setId(rs.getLong("id"));
+                        url.setAccessCount(rs.getInt("access_count"));
+                        Timestamp cat = rs.getTimestamp("created_at");
+                        if (cat != null) url.setCreatedAt(new java.util.Date(cat.getTime()));
+                        Timestamp eat = rs.getTimestamp("expires_at");
+                        if (eat != null) url.setExpiresAt(new java.util.Date(eat.getTime()));
+                        Long userId = (Long) rs.getObject("user_id");
+                        if (userId != null) {
+                            Usuario u = new Usuario(rs.getString("username"), rs.getString("password"), rs.getString("role"));
+                            u.setId(userId);
+                            url.setUser(u);
+                        }
+                        // cargar access details
+                        loadAccessData(c, url);
+                        return url;
+                    }
+                }
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
         }
-        return null;
     }
 
     public Collection<Url> getAllUrls() {
         List<Url> list = new ArrayList<>();
-        for (Document doc : urlCollection.find()) {
-            list.add(docToUrl(doc));
+        try (Connection c = ds.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT u.id, u.original_url, u.short_url, u.access_count, u.created_at, u.expires_at, u.user_id, uu.username, uu.password, uu.role FROM urls u LEFT JOIN usuarios uu ON u.user_id = uu.id ORDER BY u.id DESC");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Url url = new Url(rs.getString("original_url"), rs.getString("short_url"));
+                url.setId(rs.getLong("id"));
+                url.setAccessCount(rs.getInt("access_count"));
+                Timestamp cat = rs.getTimestamp("created_at");
+                if (cat != null) url.setCreatedAt(new java.util.Date(cat.getTime()));
+                Timestamp eat = rs.getTimestamp("expires_at");
+                if (eat != null) url.setExpiresAt(new java.util.Date(eat.getTime()));
+                Long userId = (Long) rs.getObject("user_id");
+                if (userId != null) {
+                    Usuario u = new Usuario(rs.getString("username"), rs.getString("password"), rs.getString("role"));
+                    u.setId(userId);
+                    url.setUser(u);
+                }
+                loadAccessData(c, url);
+                list.add(url);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
         }
         return list;
     }
 
+    private void loadAccessData(Connection c, Url url) throws SQLException {
+        String q = "SELECT timestamp, browser, ip, client_domain, platform FROM access_details WHERE url_id = ? ORDER BY timestamp";
+        try (PreparedStatement ps = c.prepareStatement(q)) {
+            ps.setLong(1, url.getId());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Timestamp ts = rs.getTimestamp("timestamp");
+                    String browser = rs.getString("browser");
+                    String ip = rs.getString("ip");
+                    String client = rs.getString("client_domain");
+                    String platform = rs.getString("platform");
+                    AccessDetail d = new AccessDetail(new java.util.Date(ts.getTime()), browser, ip, client, platform);
+                    url.getAccessDetails().add(d);
+                    url.getAccessTimes().add(new java.util.Date(ts.getTime()));
+                }
+            }
+        }
+    }
+
     public void recordAccess(Url url, AccessDetail detail) {
-        Document detailDoc = new Document("timestamp", detail.getTimestamp())
-                .append("browser", detail.getBrowser())
-                .append("ip", detail.getIp())
-                .append("clientDomain", detail.getClientDomain())
-                .append("platform", detail.getPlatform());
-        urlCollection.updateOne(new Document("shortUrl", url.getShortUrl()),
-                combine(inc("accessCount", 1),
-                        push("accessDetails", detailDoc),
-                        push("accessTimes", detail.getTimestamp())));
+        try (Connection c = ds.getConnection()) {
+            try (PreparedStatement up = c.prepareStatement("UPDATE urls SET access_count = access_count + 1 WHERE id = ?")) {
+                up.setLong(1, url.getId());
+                up.executeUpdate();
+            }
+            String ins = "INSERT INTO access_details(url_id, timestamp, browser, ip, client_domain, platform) VALUES(?,?,?,?,?,?)";
+            try (PreparedStatement ps = c.prepareStatement(ins)) {
+                ps.setLong(1, url.getId());
+                ps.setTimestamp(2, new Timestamp(detail.getTimestamp().getTime()));
+                ps.setString(3, detail.getBrowser());
+                ps.setString(4, detail.getIp());
+                ps.setString(5, detail.getClientDomain());
+                ps.setString(6, detail.getPlatform());
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public boolean deleteUrl(String shortUrl) {
-        return urlCollection.deleteOne(new Document("shortUrl", shortUrl)).getDeletedCount() > 0;
-    }
-
-    // Convierte el documento de MongoDB a un objeto Url, reconstruyendo también el objeto Usuario.
-    private Url docToUrl(Document doc) {
-        Url url = new Url(doc.getString("originalUrl"), doc.getString("shortUrl"));
-        url.setAccessCount(doc.getInteger("accessCount", 0));
-        url.setId(doc.getObjectId("_id"));
-
-        // Recuperar accessTimes (lista de Date)
-        List<Date> accessTimes = doc.getList("accessTimes", Date.class);
-        if (accessTimes != null) {
-            url.getAccessTimes().addAll(accessTimes);
-        }
-
-        // Recuperar accessDetails (lista de Document) y convertir cada uno a AccessDetail
-        List<Document> detailsDocs = doc.getList("accessDetails", Document.class);
-        if (detailsDocs != null) {
-            for (Document d : detailsDocs) {
-                AccessDetail detail = new AccessDetail(
-                        d.getDate("timestamp"),
-                        d.getString("browser"),
-                        d.getString("ip"),
-                        d.getString("clientDomain"),
-                        d.getString("platform")
-                );
-                url.getAccessDetails().add(detail);
+        try (Connection c = ds.getConnection()) {
+            try (PreparedStatement ps = c.prepareStatement("SELECT id FROM urls WHERE short_url = ?")) {
+                ps.setString(1, shortUrl);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        long id = rs.getLong(1);
+                        deleteById(c, id);
+                        return true;
+                    }
+                }
             }
+            return false;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
         }
-
-        // Recuperar el usuario si existe
-        Document userDoc = (Document) doc.get("user");
-        if (userDoc != null) {
-            Usuario user = new Usuario();
-            user.setUsername(userDoc.getString("username"));
-            user.setRole(userDoc.getString("role"));
-            url.setUser(user);
-        }
-
-        return url;
     }
 
+    private void deleteById(Connection c, long id) throws SQLException {
+        try (PreparedStatement ps1 = c.prepareStatement("DELETE FROM access_details WHERE url_id = ?")) {
+            ps1.setLong(1, id);
+            ps1.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement("DELETE FROM urls WHERE id = ?")) {
+            ps.setLong(1, id);
+            ps.executeUpdate();
+        }
+    }
 
     public boolean updateShortUrl(String originalShort, String newShort) {
-        Document filter = new Document("shortUrl", originalShort);
-        Document update = new Document("$set", new Document("shortUrl", newShort));
-        return urlCollection.updateOne(filter, update).getModifiedCount() > 0;
+        try (Connection c = ds.getConnection()) {
+            // verificar colisión
+            try (PreparedStatement chk = c.prepareStatement("SELECT 1 FROM urls WHERE short_url = ?")) {
+                chk.setString(1, newShort);
+                try (ResultSet rs = chk.executeQuery()) {
+                    if (rs.next()) return false; // ya existe
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("UPDATE urls SET short_url = ? WHERE short_url = ?")) {
+                ps.setString(1, newShort);
+                ps.setString(2, originalShort);
+                return ps.executeUpdate() > 0;
+            }
+        } catch (SQLException e) {
+            return false;
+        }
     }
 
 }

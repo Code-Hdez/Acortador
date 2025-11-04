@@ -13,7 +13,12 @@ import java.util.Map;
 
 public class ClientController {
 
-    private static final String BASE_URL = "https://bruhurl.azurewebsites.net";
+    private static String resolveBaseUrl() {
+        String env = System.getenv("BASE_URL");
+        if (env != null && !env.isEmpty()) return env;
+        return "http://localhost:7000";
+    }
+
     private static final HttpClient httpClient = HttpClient.newHttpClient();
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -30,11 +35,11 @@ public class ClientController {
             return;
         }
 
-        // Codificar cada valor para evitar problemas en la URL
+        String baseUrl = resolveBaseUrl();
         String formData = "username=" + URLEncoder.encode(username, StandardCharsets.UTF_8.toString())
                 + "&password=" + URLEncoder.encode(password, StandardCharsets.UTF_8.toString());
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(BASE_URL + "/api/login"))
+                .uri(URI.create(baseUrl + "/api/login"))
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formData))
@@ -59,8 +64,9 @@ public class ClientController {
             ctx.redirect("/client/login?error=" + errorMsg);
             return;
         }
+        String baseUrl = resolveBaseUrl();
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(BASE_URL + "/api/urls"))
+                .uri(URI.create(baseUrl + "/api/urls"))
                 .timeout(Duration.ofSeconds(10))
                 .header("Authorization", "Bearer " + token)
                 .GET()
@@ -68,8 +74,7 @@ public class ClientController {
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() == 200) {
-            // Se pasa el JSON de URLs y la URL de producción (por ejemplo, "https://bruhurl.azurewebsites.net")
-            ctx.render("client-dashboard.html", Map.of("urlsJson", response.body(), "baseUrl", "https://bruhurl.azurewebsites.net"));
+            ctx.render("client-dashboard.html", Map.of("urlsJson", response.body(), "baseUrl", baseUrl));
         } else {
             ctx.result("Error al obtener URLs: " + response.statusCode());
         }
@@ -88,9 +93,10 @@ public class ClientController {
             ctx.redirect("/client/dashboard?error=" + errorMsg);
             return;
         }
+        String baseUrl = resolveBaseUrl();
         String jsonPayload = objectMapper.writeValueAsString(Map.of("originalUrl", originalUrl));
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(BASE_URL + "/api/urls"))
+                .uri(URI.create(baseUrl + "/api/urls"))
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + token)

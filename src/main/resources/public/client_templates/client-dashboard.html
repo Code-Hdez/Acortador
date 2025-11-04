@@ -92,12 +92,12 @@
     /*
        Se espera que desde el controlador se pasen tres variables:
        - urlsJson: JSON con el listado de URLs.
-       - baseUrl: URL base a utilizar para formar la URL acortada (ej. "http://bruhurl.azurewebsites.net").
+       - baseUrl: URL base a utilizar para formar la URL acortada (ej. "http://localhost:7000").
        - backend: que indica "grpc" o "rest".
     */
     const urlsData = /*[[${urlsJson}]]*/ '[]';
     const urls = JSON.parse(urlsData);
-    const baseUrl = /*[[${baseUrl}]]*/ 'http://bruhurl.azurewebsites.net';
+    const baseUrl = /*[[${baseUrl}]]*/ (window.location ? window.location.origin : 'http://localhost:7000');
     const backend = /*[[${backend}]]*/ 'rest';
 
     const tbody = document.getElementById("urlTableBody");

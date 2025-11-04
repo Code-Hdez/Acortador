@@ -90,9 +90,15 @@ public class GrpcClientController {
                 })
                 .collect(Collectors.toList());
         String urlsJson = objectMapper.writeValueAsString(urls);
+        String baseUrl = System.getenv("BASE_URL");
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            String scheme = ctx.scheme() != null ? ctx.scheme() : "http";
+            String host = ctx.host() != null ? ctx.host() : "localhost:7000";
+            baseUrl = scheme + "://" + host;
+        }
         ctx.render("client-dashboard.html", Map.of(
                 "urlsJson", urlsJson,
-                "baseUrl", "https://bruhurl.azurewebsites.net",
+                "baseUrl", baseUrl,
                 "backend", "grpc"
         ));
     };

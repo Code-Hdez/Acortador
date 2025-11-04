@@ -1,9 +1,7 @@
 package edu.pucmm.eict.modelos;
 
-import org.bson.types.ObjectId;
-
 public class Usuario {
-    private ObjectId id;            // ObjectId para MongoDB
+    private Long id;            // ID autoincremental para H2
     private String username;
     private String password;
     private String role;
@@ -27,11 +25,11 @@ public class Usuario {
     }
 
     // Getters y setters
-    public ObjectId getId() {
+    public Long getId() {
         return id;
     }
 
-    public void setId(ObjectId id) {
+    public void setId(Long id) {
         this.id = id;
     }
 

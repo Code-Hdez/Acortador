@@ -21,8 +21,13 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import edu.pucmm.eict.util.Database; // added
+
 public class Main {
     public static void main(String[] args) {
+        // Inicializa la base de datos H2 (archivo por defecto o memoria si APP_DB_MODE=mem)
+        Database.init();
+
         // Configuración de Thymeleaf
         TemplateEngine templateEngine = new TemplateEngine();
         ClassLoaderTemplateResolver templateResolver = new ClassLoaderTemplateResolver();
@@ -168,8 +173,8 @@ public class Main {
         // Ruta para visualizar una URL en detalle (urls-view.html)
         app.get("/dashboard/urls-view", ctx -> {
             // Se lee el parámetro shortUrl de la query
-            String shortUrlParam = ctx.queryParam("shortUrl");
-            if (shortUrlParam == null || shortUrlParam.isEmpty()) {
+            String shortUrl = ctx.queryParam("shortUrl");
+            if (shortUrl == null || shortUrl.isEmpty()) {
                 ctx.redirect("/dashboard/urls");
                 return;
             }
@@ -180,7 +185,7 @@ public class Main {
                 return;
             }
             // Se obtiene el URL en cuestión a partir del shortUrl
-            Url url = urlService.getUrl(shortUrlParam);
+            Url url = urlService.getUrl(shortUrl);
             if (url == null) {
                 ctx.status(404).result("URL no encontrada.");
                 return;

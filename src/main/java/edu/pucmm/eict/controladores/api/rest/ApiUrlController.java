@@ -26,7 +26,7 @@ public class ApiUrlController extends BaseUrlController {
 
     /**
      * Retorna el listado de URLs publicadas por el usuario autenticado,
-     * incluyendo la fecha de creación (extraída del ObjectId), estadísticas y vista previa.
+     * incluyendo la fecha de creación, estadísticas y vista previa.
      */
     public Handler listUrlsApi = ctx -> {
         String username = ctx.attribute("currentUser");
@@ -39,8 +39,7 @@ public class ApiUrlController extends BaseUrlController {
         List<Map<String, Object>> userUrls = allUrls.stream()
                 .filter(url -> url.getUser() != null && username.equals(url.getUser().getUsername()))
                 .map(url -> {
-                    // Extraer la fecha de creación desde el ObjectId.
-                    Date createdAt = (url.getId() != null) ? url.getId().getDate() : new Date();
+                    Date createdAt = (url.getCreatedAt() != null) ? url.getCreatedAt() : new Date();
 
                     // Calculamos browserStats a partir de cada detalle de acceso.
                     Map<String, Integer> browserStats = new HashMap<>();
@@ -52,7 +51,7 @@ public class ApiUrlController extends BaseUrlController {
                     // Extraer los accessTimes y mapear cada detalle a un objeto sencillo.
                     List<String> accessTimes = url.getAccessDetails().stream()
                             .map(detail -> detail.getTimestamp().toInstant().toString())
-                            .collect(Collectors.toList());
+                            .collect(java.util.stream.Collectors.toList());
                     List<Map<String, Object>> accessDetails = url.getAccessDetails().stream()
                             .map(detail -> {
                                 Map<String, Object> map = new HashMap<>();
@@ -62,7 +61,7 @@ public class ApiUrlController extends BaseUrlController {
                                 map.put("platform", detail.getPlatform());
                                 return map;
                             })
-                            .collect(Collectors.toList());
+                            .collect(java.util.stream.Collectors.toList());
 
                     // Construir el objeto de estadísticas.
                     Map<String, Object> stats = Map.of(
@@ -109,7 +108,7 @@ public class ApiUrlController extends BaseUrlController {
         }
         // Guarda la URL en la base de datos.
         Url url = urlService.saveUrl(originalUrl, user);
-        Date createdAt = (url.getId() != null) ? url.getId().getDate() : new Date();
+        Date createdAt = (url.getCreatedAt() != null) ? url.getCreatedAt() : new Date();
         String previewImage = getPreviewImage(originalUrl);
 
         Map<String, Integer> browserStats = new HashMap<>();
@@ -120,7 +119,7 @@ public class ApiUrlController extends BaseUrlController {
 
         List<String> accessTimes = url.getAccessDetails().stream()
                 .map(detail -> detail.getTimestamp().toInstant().toString())
-                .collect(Collectors.toList());
+                .collect(java.util.stream.Collectors.toList());
         List<Map<String, Object>> accessDetails = url.getAccessDetails().stream()
                 .map(detail -> {
                     Map<String, Object> map = new HashMap<>();
@@ -130,7 +129,7 @@ public class ApiUrlController extends BaseUrlController {
                     map.put("platform", detail.getPlatform());
                     return map;
                 })
-                .collect(Collectors.toList());
+                .collect(java.util.stream.Collectors.toList());
 
         Map<String, Object> stats = Map.of(
                 "accessCount", url.getAccessCount(),

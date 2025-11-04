@@ -24,9 +24,12 @@ public class AuthController {
 
     // Se modifica para inyectar la baseUrl en la plantilla
     public Handler showIndexPage = ctx -> {
-        String baseUrl = "bruhurl.azurewebsites.net";
+        String baseUrl = System.getenv("BASE_URL");
         if (baseUrl == null || baseUrl.isEmpty()) {
-            baseUrl = "http://localhost:7000";
+            // Construir base desde request para soporte local
+            String scheme = ctx.scheme() != null ? ctx.scheme() : "http";
+            String host = ctx.host() != null ? ctx.host() : "localhost:7000";
+            baseUrl = scheme + "://" + host;
         }
         ctx.render("index.html", Map.of("baseUrl", baseUrl));
     };

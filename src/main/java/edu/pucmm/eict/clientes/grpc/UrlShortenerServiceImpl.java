@@ -66,7 +66,7 @@ public class UrlShortenerServiceImpl extends UrlShortenerServiceGrpc.UrlShortene
         String shortUrl = url.getShortUrl();
         String previewImage = getPreviewImage(originalUrl);
 
-        Date createdDate = (url.getId() != null) ? url.getId().getDate() : new Date();
+        Date createdDate = (url.getCreatedAt() != null) ? url.getCreatedAt() : new Date();
         String createdAt = createdDate.toInstant().toString();
 
         // Construir las estadísticas
@@ -112,7 +112,7 @@ public class UrlShortenerServiceImpl extends UrlShortenerServiceGrpc.UrlShortene
 
         List<UrlEntry> entries = urls.stream().map(url -> {
             String shortUrl = url.getShortUrl();
-            Date createdDate = (url.getId() != null) ? url.getId().getDate() : new Date();
+            Date createdDate = (url.getCreatedAt() != null) ? url.getCreatedAt() : new Date();
             String createdAt = createdDate.toInstant().toString();
 
             UrlStatistics.Builder statsBuilder = UrlStatistics.newBuilder()

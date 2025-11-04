@@ -13,8 +13,40 @@
 <body class="min-h-screen bg-gradient-to-br from-[#0f172a] to-[#1e2a5a] text-white">
 <div class="flex flex-col items-center p-6">
     <div class="bg-white text-black rounded-lg shadow-lg w-full max-w-xl p-8">
-        <h2 class="text-3xl font-bold mb-6 text-center">Editar Usuario</h2>
-        <form method="post" action="/dashboard/users/update" class="space-y-6">
+        <!-- Título dinámico: Crear o Editar -->
+        <h2 class="text-3xl font-bold mb-6 text-center"
+            th:text="${#strings.isEmpty(usuario.username) ? 'Crear Usuario' : 'Editar Usuario'}">
+            Editar Usuario
+        </h2>
+
+        <!-- Modo CREAR: cuando no hay username -->
+        <form th:if="${#strings.isEmpty(usuario.username)}"
+              method="post" action="/dashboard/users/add" class="space-y-6">
+            <div>
+                <label for="username" class="block text-sm font-medium mb-2">Nombre de usuario</label>
+                <input type="text" id="username" name="username" placeholder="ej: juan" required
+                       class="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+            <div>
+                <label for="passwordCreate" class="block text-sm font-medium mb-2">Contraseña</label>
+                <input type="password" id="passwordCreate" name="password" placeholder="********" required
+                       class="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+            <div class="flex justify-between">
+                <a href="/dashboard/users"
+                   class="bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600 transition">
+                    Cancelar
+                </a>
+                <button type="submit"
+                        class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition">
+                    Crear usuario
+                </button>
+            </div>
+        </form>
+
+        <!-- Modo EDITAR: cuando hay username -->
+        <form th:if="${!#strings.isEmpty(usuario.username)}"
+              method="post" action="/dashboard/users/update" class="space-y-6">
             <!-- Campo oculto para preservar el username -->
             <input type="hidden" name="username" th:value="${usuario.username}" />
 
@@ -41,10 +73,12 @@
             </div>
 
             <div class="flex justify-between">
-                <a href="/dashboard/users" class="bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600 transition">
+                <a href="/dashboard/users"
+                   class="bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600 transition">
                     Cancelar
                 </a>
-                <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition">
+                <button type="submit"
+                        class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition">
                     Guardar cambios
                 </button>
             </div>

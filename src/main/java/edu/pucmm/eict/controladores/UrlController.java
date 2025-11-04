@@ -30,6 +30,18 @@ public class UrlController {
         this.urlService = urlService;
     }
 
+    private String resolveBaseUrl(io.javalin.http.Context ctx) {
+        String envBase = System.getenv("BASE_URL");
+        if (envBase != null && !envBase.isEmpty()) return envBase;
+        String forwardedProto = ctx.header("X-Forwarded-Proto");
+        String forwardedHost = ctx.header("X-Forwarded-Host");
+        String scheme = forwardedProto != null && !forwardedProto.isEmpty() ? forwardedProto : ctx.scheme();
+        String host = forwardedHost != null && !forwardedHost.isEmpty() ? forwardedHost : ctx.host();
+        if (scheme == null || scheme.isEmpty()) scheme = "http";
+        if (host == null || host.isEmpty()) host = "localhost:7000";
+        return scheme + "://" + host;
+    }
+
     // Handler para crear URL (asigna usuario anónimo si no hay uno en sesión)
     public Handler createShortUrl = ctx -> {
         String originalUrl = ctx.formParam("url");
@@ -40,7 +52,7 @@ public class UrlController {
                 // Si no hay usuario, se usa un identificador de sesión para crear un usuario anónimo
                 String sessionId = ctx.sessionAttribute("sessionId");
                 if (sessionId == null) {
-                    sessionId = UUID.randomUUID().toString();
+                    sessionId = java.util.UUID.randomUUID().toString();
                     ctx.sessionAttribute("sessionId", sessionId);
                 }
                 currentUser = new Usuario();
@@ -49,11 +61,8 @@ public class UrlController {
             }
             Url url = urlService.saveUrl(originalUrl, currentUser);
 
-            // Obtener el dominio base desde la variable de entorno o usar localhost
-            String baseUrl = System.getenv("BASE_URL");
-            if(baseUrl == null || baseUrl.isEmpty()){
-                baseUrl = "http://localhost:7000";
-            }
+            // Construir base URL dinámicamente (soporta local y proxy)
+            String baseUrl = resolveBaseUrl(ctx);
 
             String shortUrl = baseUrl + "/go/" + url.getShortUrl();
             try {

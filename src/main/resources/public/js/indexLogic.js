@@ -37,8 +37,12 @@ window.currentShortUrl = null;
 // Objeto global para guardar contenido de cada popup
 window.popupContents = {};
 
-// Obtiene el valor base desde el meta tag inyectado en la plantilla index.html.
-const baseUrl = "https://bruhurl.azurewebsites.net";
+// Obtiene el valor base desde meta[name=base-url] inyectado, o usa origin local
+(function(){
+    const meta = document.querySelector('meta[name="base-url"]');
+    const metaBase = meta && meta.getAttribute('content') ? meta.getAttribute('content') : '';
+    window.baseUrl = metaBase || window.location.origin;
+})();
 
 // === Función para refrescar la lista de URLs ===
 async function refreshUrlList() {
@@ -84,10 +88,10 @@ async function refreshUrlList() {
             </td>
             <td class="p-2 border">${item.originalUrl.length > 35 ? item.originalUrl.substring(0, 35) + '…' : item.originalUrl}</td>
             <td class="p-2 border">
-                <a href="${baseUrl}/go/${item.shortUrl}"
+                <a href="${window.baseUrl}/go/${item.shortUrl}"
                    data-original-url="${item.originalUrl}"
                    class="shortLink text-blue-600 hover:underline" target="_blank">
-                   ${baseUrl}/go/${item.shortUrl}
+                   ${window.baseUrl}/go/${item.shortUrl}
                 </a>
             </td>
             <td class="p-2 border">${item.accessCount}</td>
@@ -115,7 +119,7 @@ async function refreshUrlList() {
                 }
 
                 // Generar el código QR usando un servicio externo (QRServer)
-                const shortUrlFull = baseUrl + "/go/" + item.shortUrl;
+                const shortUrlFull = window.baseUrl + "/go/" + item.shortUrl;
                 const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?data=" +
                     encodeURIComponent(shortUrlFull) +
                     "&size=120x120";
