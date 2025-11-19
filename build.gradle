@@ -52,6 +52,9 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-impl:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
+    // Libreria para hashing seguro de contraseñas
+    implementation 'org.mindrot:jbcrypt:0.4'
+
     // Dependencias gRPC
     implementation 'io.grpc:grpc-netty:1.56.0'
     implementation 'io.grpc:grpc-protobuf:1.56.0'

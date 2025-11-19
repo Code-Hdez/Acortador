@@ -2,6 +2,7 @@ package edu.pucmm.eict.services;
 
 import edu.pucmm.eict.modelos.Usuario;
 import edu.pucmm.eict.util.Database;
+import org.mindrot.jbcrypt.BCrypt;
 
 import javax.sql.DataSource;
 import java.sql.*;
@@ -14,6 +15,30 @@ public class UserService {
 
     public UserService() {
         this.ds = Database.getDataSource();
+    }
+
+    /**
+     * Hashea una contraseña usando BCrypt con salt automático
+        * @param plainPassword Contraseña en texto plano
+        * @return Hash seguro de la contraseña
+     */
+    private String hashPassword(String plainPassword) {
+        return BCrypt.hashpw(plainPassword, BCrypt.gensalt(12));
+    }
+
+    /**
+     * Verifica si una contraseña en texto plano coincide con un hash
+        * @param plainPassword Contraseña en texto plano
+        * @param hashedPassword Hash almacenado en BD
+        * @return true si coinciden, false en caso contrario
+     */
+    private boolean verifyPassword(String plainPassword, String hashedPassword) {
+        try {
+            return BCrypt.checkpw(plainPassword, hashedPassword);
+        } catch (IllegalArgumentException e) {
+            // El hash no es válido (posiblemente texto plano antiguo)
+            return false;
+        }
     }
 
     public Usuario getUserByUsername(String username) {
@@ -38,7 +63,7 @@ public class UserService {
         String sql = "INSERT INTO usuarios(username, password, role) VALUES(?,?,?)";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, username);
-            ps.setString(2, password);
+            ps.setString(2, hashPassword(password)); // ✅ Hash seguro
             ps.setString(3, "user");
             ps.executeUpdate();
             return true;
@@ -52,7 +77,7 @@ public class UserService {
         String sql = "INSERT INTO usuarios(username, password, role) VALUES(?,?,?)";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, username);
-            ps.setString(2, password);
+            ps.setString(2, hashPassword(password)); // ✅ Hash seguro
             ps.setString(3, "admin");
             ps.executeUpdate();
             return true;
@@ -62,12 +87,16 @@ public class UserService {
     }
 
     public boolean authenticate(String username, String password) {
-        String sql = "SELECT 1 FROM usuarios WHERE username = ? AND password = ?";
+        // ✅ Cambio: recuperar el hash y verificar con BCrypt
+        String sql = "SELECT password FROM usuarios WHERE username = ?";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, username);
-            ps.setString(2, password);
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
+                if (rs.next()) {
+                    String storedHash = rs.getString("password");
+                    return verifyPassword(password, storedHash);
+                }
+                return false;
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -122,16 +151,16 @@ public class UserService {
     public void createDefaultAdmin() {
         if (getUserByUsername("admin") == null) {
             registerAdmin("admin", "admin");
-            System.out.println("Default admin created.");
+            System.out.println("✅ Default admin created with secure password.");
         } else {
-            System.out.println("Admin user already exists.");
+            System.out.println("ℹ️  Admin user already exists.");
         }
     }
 
     public boolean updateUser(String username, String password, String role) {
         String sql = "UPDATE usuarios SET password = ?, role = ? WHERE username = ?";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, password);
+            ps.setString(1, hashPassword(password)); // ✅ Hash seguro
             ps.setString(2, role);
             ps.setString(3, username);
             return ps.executeUpdate() > 0;
