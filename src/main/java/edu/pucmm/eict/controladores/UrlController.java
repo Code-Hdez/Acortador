@@ -170,38 +170,61 @@ public class UrlController {
     };
 
     public Handler getAccessStats = ctx -> {
+        // 1. AUTENTICACIÓN: Verificar que el usuario esté logueado
+        Usuario currentUser = ctx.sessionAttribute("user");
+        if (currentUser == null) {
+            ctx.status(401).result("No autorizado. Debes iniciar sesión para ver estadísticas.");
+            return;
+        }
+
+        // 2. Obtener el recurso solicitado
         String shortUrl = ctx.pathParam("shortUrl");
         Url url = urlService.getUrl(shortUrl);
-        if (url != null) {
-            Map<String, Integer> browserStats = new HashMap<>();
-            url.getAccessDetails().forEach(detail -> {
-                String browser = detail.getBrowser();
-                browserStats.put(browser, browserStats.getOrDefault(browser, 0) + 1);
-            });
-            // Extraer accessTimes a partir de accessDetails
-            List<String> accessTimesStr = url.getAccessDetails().stream()
-                    .map(detail -> detail.getTimestamp().toInstant().toString())
-                    .toList();
-            // Mapear cada AccessDetail a un objeto simple para enviar
-            List<Map<String, Object>> accessDetailsList = url.getAccessDetails().stream()
-                    .map(detail -> {
-                        Map<String, Object> map = new HashMap<>();
-                        map.put("timestamp", detail.getTimestamp().toInstant().toString());
-                        map.put("ip", detail.getIp());
-                        map.put("browser", detail.getBrowser());
-                        map.put("platform", detail.getPlatform());
-                        return map;
-                    })
-                    .toList();
-            ctx.json(Map.of(
-                    "accessTimes", accessTimesStr,
-                    "browserStats", browserStats,
-                    "originalUrl", url.getOriginalUrl(),
-                    "accessDetails", accessDetailsList
-            ));
-        } else {
+        
+        if (url == null) {
             ctx.status(404).result("Enlace no encontrado.");
+            return;
         }
+
+        // 3. AUTORIZACIÓN: Verificar que el usuario sea el propietario O admin
+        boolean isOwner = url.getUser() != null && 
+                          url.getUser().getUsername().equals(currentUser.getUsername());
+        boolean isAdmin = "admin".equals(currentUser.getRole());
+
+        if (!isOwner && !isAdmin) {
+            // No revelar si el enlace existe - respuesta consistente
+            ctx.status(403).result("No tienes permiso para acceder a estas estadísticas.");
+            return;
+        }
+
+        // 4. Si pasa las validaciones, devolver las estadísticas
+        Map<String, Integer> browserStats = new HashMap<>();
+        url.getAccessDetails().forEach(detail -> {
+            String browser = detail.getBrowser();
+            browserStats.put(browser, browserStats.getOrDefault(browser, 0) + 1);
+        });
+        
+        List<String> accessTimesStr = url.getAccessDetails().stream()
+                .map(detail -> detail.getTimestamp().toInstant().toString())
+                .toList();
+        
+        List<Map<String, Object>> accessDetailsList = url.getAccessDetails().stream()
+                .map(detail -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("timestamp", detail.getTimestamp().toInstant().toString());
+                    map.put("ip", detail.getIp());
+                    map.put("browser", detail.getBrowser());
+                    map.put("platform", detail.getPlatform());
+                    return map;
+                })
+                .toList();
+        
+        ctx.json(Map.of(
+                "accessTimes", accessTimesStr,
+                "browserStats", browserStats,
+                "originalUrl", url.getOriginalUrl(),
+                "accessDetails", accessDetailsList
+        ));
     };
 
 
