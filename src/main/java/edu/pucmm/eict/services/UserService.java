@@ -63,7 +63,7 @@ public class UserService {
         String sql = "INSERT INTO usuarios(username, password, role) VALUES(?,?,?)";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, username);
-            ps.setString(2, hashPassword(password)); // ✅ Hash seguro
+            ps.setString(2, hashPassword(password)); // Hash seguro
             ps.setString(3, "user");
             ps.executeUpdate();
             return true;
@@ -77,7 +77,7 @@ public class UserService {
         String sql = "INSERT INTO usuarios(username, password, role) VALUES(?,?,?)";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, username);
-            ps.setString(2, hashPassword(password)); // ✅ Hash seguro
+            ps.setString(2, hashPassword(password)); // Hash seguro
             ps.setString(3, "admin");
             ps.executeUpdate();
             return true;
@@ -87,7 +87,7 @@ public class UserService {
     }
 
     public boolean authenticate(String username, String password) {
-        // ✅ Cambio: recuperar el hash y verificar con BCrypt
+        // Cambio: recuperar el hash y verificar con BCrypt
         String sql = "SELECT password FROM usuarios WHERE username = ?";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, username);
@@ -151,16 +151,16 @@ public class UserService {
     public void createDefaultAdmin() {
         if (getUserByUsername("admin") == null) {
             registerAdmin("admin", "admin");
-            System.out.println("✅ Default admin created with secure password.");
+            System.out.println("Default admin created with secure password.");
         } else {
-            System.out.println("ℹ️  Admin user already exists.");
+            System.out.println("Admin user already exists.");
         }
     }
 
     public boolean updateUser(String username, String password, String role) {
         String sql = "UPDATE usuarios SET password = ?, role = ? WHERE username = ?";
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, hashPassword(password)); // ✅ Hash seguro
+            ps.setString(1, hashPassword(password)); // Hash seguro
             ps.setString(2, role);
             ps.setString(3, username);
             return ps.executeUpdate() > 0;
