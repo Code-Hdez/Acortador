@@ -1,0 +1,19 @@
+# Build output directories
+build/
+.gradle/
+
+# IDE files
+.idea/
+*.iml
+
+# Data files
+data/
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/
+

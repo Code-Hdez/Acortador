@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -74,7 +76,8 @@ public class GrpcClientController {
                                     "clientDomain", ad.getClientDomain(),
                                     "platform", ad.getPlatform()
                             ))
-                            .collect(Collectors.toList()).reversed();
+                            .collect(Collectors.toCollection(ArrayList::new));
+                    Collections.reverse(accessDetails);
 
                     return Map.of(
                             "originalUrl", entry.getOriginalUrl(),
